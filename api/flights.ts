@@ -1,11 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS-Header für Vercel erlauben
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -19,33 +16,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const apiKey = '838ee18c08f3940eed99c67d6521b6e28b5986ca30c3ba7823e1841883852cd3';
+  const airports = String(departure_id).split(',').map(s => s.trim()).filter(Boolean);
 
   try {
-    const params = new URLSearchParams({
-      engine: 'google_flights',
-      departure_id: String(departure_id),
-      arrival_id: String(arrival_id),
-      outbound_date: String(outbound_date),
-      stops: '1',
-      currency: 'EUR',
-      hl: 'de',
-      api_key: apiKey
+    // Fragt maximal die 4 nächsten/aktivsten Flughäfen parallel ab
+    const requests = airports.slice(0, 4).map(async (origin) => {
+      const params = new URLSearchParams({
+        engine: 'google_flights',
+        departure_id: origin,
+        arrival_id: String(arrival_id),
+        outbound_date: String(outbound_date),
+        stops: '1',
+        currency: 'EUR',
+        hl: 'de',
+        api_key: apiKey
+      });
+
+      if (return_date) {
+        params.append('return_date', String(return_date));
+      }
+
+      const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
+      if (!response.ok) return null;
+      return response.json();
     });
 
-    if (return_date) {
-      params.append('return_date', String(return_date));
-    }
+    const results = await Promise.all(requests);
+    const validResults = results.filter(Boolean);
 
-    const serpUrl = `https://serpapi.com/search.json?${params.toString()}`;
-    const response = await fetch(serpUrl);
+    // Bündelt alle Flüge in ein gemeinsames Array
+    let combinedBest: any[] = [];
+    let combinedOther: any[] = [];
 
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(response.status).json({ error: errText });
-    }
+    validResults.forEach(data => {
+      if (data?.best_flights) combinedBest.push(...data.best_flights);
+      if (data?.other_flights) combinedOther.push(...data.other_flights);
+    });
 
-    const data = await response.json();
-    return res.status(200).json(data);
+    return res.status(200).json({
+      best_flights: combinedBest,
+      other_flights: combinedOther
+    });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'Serverfehler beim Abruf' });
   }
