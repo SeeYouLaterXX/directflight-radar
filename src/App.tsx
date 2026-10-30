@@ -211,9 +211,9 @@ export default function App() {
 
     try {
       const departureIds = activeAirports.map(a => a.iata).join(',');
-      const liveUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${departureIds}&arrival_id=${selectedDest.iata}&outbound_date=${outboundDate}&return_date=${returnDate}&stops=1&currency=EUR&hl=de&api_key=${defaultApiKey.trim()}`;
+	  const apiUrl = `/api/flights?departure_id=${departureIds}&arrival_id=${selectedDest.iata}&outbound_date=${outboundDate}&return_date=${returnDate}`;
 
-      const res = await fetch(liveUrl);
+      const res = await fetch(apiUrl);
       if (res.ok) {
         const liveJson = await res.json();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
