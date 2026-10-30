@@ -60,7 +60,6 @@ function timeToMinutes(timeStr?: string): number {
 }
 
 export default function App() {
-  const defaultApiKey = '838ee18c08f3940eed99c67d6521b6e28b5986ca30c3ba7823e1841883852cd3';
 
   // Weltweiter Flughafen-Katalog aus public/airports.json
   const [allAirports, setAllAirports] = useState<Airport[]>([]);
