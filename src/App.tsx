@@ -190,6 +190,7 @@ export default function App() {
   };
 
   // Suche starten
+  // Suche starten
   const handleExecuteSearch = async () => {
     if (!selectedDest) {
       setStatusMessage({ type: 'error', text: 'Bitte wähle ein gültiges Reiseziel aus der Liste aus.' });
@@ -210,7 +211,7 @@ export default function App() {
 
     try {
       const departureIds = activeAirports.map(a => a.iata).join(',');
-	  const apiUrl = `/api/flights?departure_id=${departureIds}&arrival_id=${selectedDest.iata}&outbound_date=${outboundDate}&return_date=${returnDate}`;
+      const apiUrl = `/api/flights?departure_id=${departureIds}&arrival_id=${selectedDest.iata}&outbound_date=${outboundDate}&return_date=${returnDate}`;
 
       const res = await fetch(apiUrl);
       if (res.ok) {
@@ -219,43 +220,65 @@ export default function App() {
         const offers: any[] = liveJson.best_flights || liveJson.other_flights || [];
 
         offers.forEach((offer, idx) => {
-          if (!offer.layovers || offer.layovers.length === 0) {
-            const segs = offer.flights || [];
-            if (segs.length >= 2) {
-              const outSeg = segs[0];
-              const inSeg = segs[segs.length - 1];
-              const apMatch = activeAirports.find(a => a.iata === outSeg.departure_airport?.id) || activeAirports[0];
+          // Nur Angebote ohne Umstiege (Nonstop)
+          const hasLayover = offer.layovers && offer.layovers.length > 0;
+          if (hasLayover) return;
 
-              const outArrM = timeToMinutes(outSeg.arrival_airport?.time);
-              const inDepM = timeToMinutes(inSeg.departure_airport?.time);
+          const segs = offer.flights || [];
+          if (segs.length === 0) return;
 
-              if (outArrM >= timeToMinutes(minOutboundArrival) && inDepM >= timeToMinutes(minInboundDeparture)) {
-                foundFlights.push({
-                  id: `LIVE-${idx}-${outSeg.flight_number || idx}`,
-                  originAirport: apMatch,
-                  destinationIata: selectedDest.iata,
-                  destinationCity: selectedDest.city || selectedDest.name,
-                  airline: outSeg.airline || 'Airline',
-                  airlineCode: outSeg.airline?.substring(0, 2).toUpperCase() || 'FL',
-                  price: offer.price || 150,
-                  outbound: {
-                    date: outboundDate,
-                    flightNo: outSeg.flight_number || 'Direktflug',
-                    departureTime: outSeg.departure_airport?.time || '14:00',
-                    arrivalTime: outSeg.arrival_airport?.time || '18:00',
-                    duration: `${Math.floor((outSeg.duration || 140) / 60)}h ${(outSeg.duration || 140) % 60}m`
-                  },
-                  inbound: {
-                    date: returnDate,
-                    flightNo: inSeg.flight_number || 'Direktflug',
-                    departureTime: inSeg.departure_airport?.time || '19:00',
-                    arrivalTime: inSeg.arrival_airport?.time || '21:30',
-                    duration: `${Math.floor((inSeg.duration || 140) / 60)}h ${(inSeg.duration || 140) % 60}m`
-                  }
-                });
-              }
-            }
+          // Hinflug ist immer das erste Segment
+          const outSeg = segs[0];
+          // Rückflug ist entweder das 2. Segment oder das letzte
+          const inSeg = segs.length > 1 ? segs[segs.length - 1] : null;
+
+          // WICHTIG: Wenn Rückflugdatum gewählt ist, aber kein Rückflug existiert -> überspringen
+          if (returnDate && !inSeg) return;
+
+          const apMatch = activeAirports.find(a => a.iata === outSeg.departure_airport?.id) || activeAirports[0];
+
+          const outArrM = timeToMinutes(outSeg.arrival_airport?.time);
+          const minOutM = timeToMinutes(minOutboundArrival);
+
+          // Prüfen, ob Hinflug-Zeitkriterium passt
+          if (outArrM < minOutM) return;
+
+          // Falls Rückflug vorhanden ist, prüfen ob Abflugzeit nach Feierabend liegt
+          if (inSeg) {
+            const inDepM = timeToMinutes(inSeg.departure_airport?.time);
+            const minInM = timeToMinutes(minInboundDeparture);
+            if (inDepM < minInM) return;
           }
+
+          foundFlights.push({
+            id: `LIVE-${idx}-${outSeg.flight_number || idx}`,
+            originAirport: apMatch,
+            destinationIata: selectedDest.iata,
+            destinationCity: selectedDest.city || selectedDest.name,
+            airline: outSeg.airline || 'Airline',
+            airlineCode: outSeg.airline?.substring(0, 2).toUpperCase() || 'FL',
+            price: offer.price || 150,
+            outbound: {
+              date: outboundDate,
+              flightNo: outSeg.flight_number || 'Direktflug',
+              departureTime: outSeg.departure_airport?.time || '14:00',
+              arrivalTime: outSeg.arrival_airport?.time || '18:00',
+              duration: `${Math.floor((outSeg.duration || 140) / 60)}h ${(outSeg.duration || 140) % 60}m`
+            },
+            inbound: inSeg ? {
+              date: returnDate,
+              flightNo: inSeg.flight_number || 'Direktflug',
+              departureTime: inSeg.departure_airport?.time || '19:00',
+              arrivalTime: inSeg.arrival_airport?.time || '21:30',
+              duration: `${Math.floor((inSeg.duration || 140) / 60)}h ${(inSeg.duration || 140) % 60}m`
+            } : undefined
+          });
+        });
+      } else {
+        const errData = await res.json().catch(() => null);
+        setStatusMessage({ 
+          type: 'error', 
+          text: errData?.error || `Server antwortete mit Status ${res.status}` 
         });
       }
     } catch {
